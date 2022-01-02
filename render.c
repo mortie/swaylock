@@ -247,13 +247,13 @@ void render_frame(struct swaylock_surface *surface) {
 		cairo_set_font_size(cairo, font_size);
 		switch (state->auth_state) {
 		case AUTH_STATE_VALIDATING:
-			text = "verifying";
+			text = state->args.validatingstr;
 			break;
 		case AUTH_STATE_INVALID:
-			text = "wrong";
+			text = state->args.invalidstr;
 			break;
 		case AUTH_STATE_CLEAR:
-			text = "cleared";
+			text = state->args.clearstr;
 			break;
 		case AUTH_STATE_INPUT:
 		case AUTH_STATE_INPUT_NOP:
