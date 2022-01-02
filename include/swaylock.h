@@ -75,6 +75,9 @@ struct swaylock_args {
 	bool clock;
 	char *timestr;
 	char *datestr;
+	char *validatingstr;
+	char *invalidstr;
+	char *clearstr;
 	uint32_t fade_in;
 	bool password_submit_on_touch;
 	uint32_t password_grace_period;

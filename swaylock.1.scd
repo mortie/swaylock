@@ -77,6 +77,15 @@ Locks your Wayland session.
 *--datestr* <format>
 	The date format for the indicator clock. Defaults to '%a, %x'.
 
+*--verstr* <string>
+	The string displayed when the password is being verified.
+
+*--wrongstr* <string>
+	The string displayed when the password is wrong.
+
+*--clearstr* <string>
+	The string displayed when the password is cleared.
+
 *-i, --image* [[<output>]:]<path>
 	Display the given image, optionally only on the given output. Use -c to set
 	a background color. If the path potentially contains a ':', prefix it with another

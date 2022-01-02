@@ -103,7 +103,7 @@ static const char *parse_screen_pos_pair(const char *str, char delim,
 }
 
 static const char *parse_constant(const char *str1, const char *str2) {
-	size_t len = strlen(str2); 
+	size_t len = strlen(str2);
 	if (strncmp(str1, str2, len) == 0) {
 		return str1 + len;
 	} else {
@@ -957,6 +957,9 @@ static int parse_options(int argc, char **argv, struct swaylock_state *state,
 		LO_CLOCK,
 		LO_TIMESTR,
 		LO_DATESTR,
+		LO_VERSTR,
+		LO_WRONGSTR,
+		LO_CLEARSTR,
 		LO_FADE_IN,
 		LO_SUBMIT_ON_TOUCH,
 		LO_GRACE,
@@ -1032,6 +1035,9 @@ static int parse_options(int argc, char **argv, struct swaylock_state *state,
 		{"clock", no_argument, NULL, LO_CLOCK},
 		{"timestr", required_argument, NULL, LO_TIMESTR},
 		{"datestr", required_argument, NULL, LO_DATESTR},
+		{"verstr", required_argument, NULL, LO_VERSTR},
+		{"wrongstr", required_argument, NULL, LO_WRONGSTR},
+		{"clearstr", required_argument, NULL, LO_CLEARSTR},
 		{"fade-in", required_argument, NULL, LO_FADE_IN},
 		{"submit-on-touch", no_argument, NULL, LO_SUBMIT_ON_TOUCH},
 		{"grace", required_argument, NULL, LO_GRACE},
@@ -1095,6 +1101,12 @@ static int parse_options(int argc, char **argv, struct swaylock_state *state,
 			"The format string for the time. Defaults to '%T'.\n"
 		"  --datestr <format>               "
 			"The format string for the date. Defaults to '%a, %x'.\n"
+		"  --verstr <string>                "
+			"The string displayed when the password is being verified.\n"
+		"  --wrongstr <string>              "
+			"The string displayed when the password is wrong.\n"
+		"  --clearstr <string>              "
+			"The string displayed when the password is cleared.\n"
 		"  -v, --version                    "
 			"Show the version number and quit.\n"
 		"  --bs-hl-color <color>            "
@@ -1575,6 +1587,24 @@ static int parse_options(int argc, char **argv, struct swaylock_state *state,
 				state->args.datestr = strdup(optarg);
 			}
 			break;
+		case LO_VERSTR:
+			if (state) {
+				free(state->args.validatingstr);
+				state->args.validatingstr = strdup(optarg);
+			}
+			break;
+		case LO_WRONGSTR:
+			if (state) {
+				free(state->args.invalidstr);
+				state->args.invalidstr = strdup(optarg);
+			}
+			break;
+		case LO_CLEARSTR:
+			if (state) {
+				free(state->args.clearstr);
+				state->args.clearstr = strdup(optarg);
+			}
+			break;
 		case LO_FADE_IN:
 			if (state) {
 				state->args.fade_in = parse_seconds(optarg);
@@ -1752,6 +1782,9 @@ int main(int argc, char **argv) {
 		.clock = false,
 		.timestr = strdup("%T"),
 		.datestr = strdup("%a, %x"),
+		.validatingstr = strdup("Verifying"),
+		.invalidstr = strdup("Wrong"),
+		.clearstr = strdup("Cleared"),
 		.password_grace_period = 0,
 	};
 	wl_list_init(&state.images);
