@@ -3,7 +3,7 @@ project(
 	'c',
 	version: '1.6-3',
 	license: 'MIT',
-	meson_version: '>=0.48.0',
+	meson_version: '>=0.59.0',
 	default_options: [
 		'c_std=c11',
 		'warning_level=2',
@@ -37,7 +37,8 @@ is_freebsd = host_machine.system().startswith('freebsd')
 
 add_project_arguments(
 	'-DSYSCONFDIR="/@0@"'.format(join_paths(prefix, sysconfdir)),
-	language : 'c')
+	language : 'c',
+)
 
 if is_freebsd
 	add_project_arguments('-D_C11_SOURCE', language: 'c')
@@ -57,48 +58,43 @@ foreach cflag : test_cflags
 endforeach
 
 wayland_client = dependency('wayland-client')
-wayland_protos = dependency('wayland-protocols', version: '>=1.14')
-xkbcommon      = dependency('xkbcommon')
-cairo          = dependency('cairo')
-gdk_pixbuf     = dependency('gdk-pixbuf-2.0', required: get_option('gdk-pixbuf'))
-bash_comp      = dependency('bash-completion', required: false)
-fish_comp      = dependency('fish', required: false)
-libpam         = cc.find_library('pam', required: get_option('pam'))
-crypt          = cc.find_library('crypt', required: not libpam.found())
-math           = cc.find_library('m')
-rt             = cc.find_library('rt')
-dl             = cc.find_library('dl')
+wayland_protos = dependency('wayland-protocols', version: '>=1.25', fallback: 'wayland-protocols')
+wayland_scanner = dependency('wayland-scanner', version: '>=1.15.0')
+xkbcommon = dependency('xkbcommon')
+cairo = dependency('cairo')
+gdk_pixbuf = dependency('gdk-pixbuf-2.0', required: get_option('gdk-pixbuf'))
+bash_comp = dependency('bash-completion', required: false)
+fish_comp = dependency('fish', required: false)
+libpam = cc.find_library('pam', required: get_option('pam'))
+crypt = cc.find_library('crypt', required: not libpam.found())
+math = cc.find_library('m')
+rt = cc.find_library('rt')
+dl = cc.find_library('dl')
 
 git = find_program('git', required: false)
 scdoc = find_program('scdoc', required: get_option('man-pages'))
-wayland_scanner = find_program('wayland-scanner')
+wayland_scanner_prog = find_program(wayland_scanner.get_variable('wayland_scanner'))
 
 version = '"@0@"'.format(meson.project_version())
 if git.found()
-	git_commit_hash = run_command([git.path(), 'describe', '--always', '--tags'])
-	git_branch = run_command([git.path(), 'rev-parse', '--abbrev-ref', 'HEAD'])
+	git_commit_hash = run_command([git, 'describe', '--always', '--tags'], check: false)
+	git_branch = run_command([git, 'rev-parse', '--abbrev-ref', 'HEAD'], check: false)
 	if git_commit_hash.returncode() == 0 and git_branch.returncode() == 0
 		version = '"@0@ (" __DATE__ ", branch \'@1@\')"'.format(git_commit_hash.stdout().strip(), git_branch.stdout().strip())
 	endif
 endif
 add_project_arguments('-DSWAYLOCK_VERSION=@0@'.format(version), language: 'c')
 
-wl_protocol_dir = wayland_protos.get_pkgconfig_variable('pkgdatadir')
-
-if wayland_client.version().version_compare('>=1.14.91')
-	code_type = 'private-code'
-else
-	code_type = 'code'
-endif
+wl_protocol_dir = wayland_protos.get_variable('pkgdatadir')
 
 wayland_scanner_code = generator(
-	wayland_scanner,
+	wayland_scanner_prog,
 	output: '@BASENAME@-protocol.c',
-	arguments: [code_type, '@INPUT@', '@OUTPUT@'],
+	arguments: ['private-code', '@INPUT@', '@OUTPUT@'],
 )
 
 wayland_scanner_client = generator(
-	wayland_scanner,
+	wayland_scanner_prog,
 	output: '@BASENAME@-client-protocol.h',
 	arguments: ['client-header', '@INPUT@', '@OUTPUT@'],
 )
@@ -109,6 +105,7 @@ client_protos_headers = []
 client_protocols = [
 	[wl_protocol_dir, 'stable/xdg-shell/xdg-shell.xml'],
 	[wl_protocol_dir, 'unstable/xdg-output/xdg-output-unstable-v1.xml'],
+	[wl_protocol_dir, 'staging/ext-session-lock/ext-session-lock-v1.xml'],
 	['wlr-layer-shell-unstable-v1.xml'],
 	['wlr-input-inhibitor-unstable-v1.xml'],
 	['wlr-screencopy-unstable-v1.xml'],
@@ -188,7 +185,6 @@ install_data(
 )
 
 if scdoc.found()
-	sh = find_program('sh')
 	mandir = get_option('mandir')
 	man_files = [
 		'swaylock.1.scd',
@@ -202,9 +198,9 @@ if scdoc.found()
 			output,
 			input: filename,
 			output: output,
-			command: [
-				sh, '-c', '@0@ < @INPUT@ > @1@'.format(scdoc.path(), output)
-			],
+			command: scdoc,
+			feed: true,
+			capture: true,
 			install: true,
 			install_dir: '@0@/man@1@'.format(mandir, section)
 		)
@@ -227,7 +223,7 @@ if get_option('bash-completions')
 		'completions/bash/swaylock',
 	)
 	if bash_comp.found()
-		bash_install_dir = bash_comp.get_pkgconfig_variable('completionsdir')
+		bash_install_dir = bash_comp.get_variable('completionsdir')
 	else
 		bash_install_dir = datadir + '/bash-completion/completions'
 	endif
@@ -240,7 +236,7 @@ if get_option('fish-completions')
 		'completions/fish/swaylock.fish',
 	)
 	if fish_comp.found()
-		fish_install_dir = fish_comp.get_pkgconfig_variable('completionsdir')
+		fish_install_dir = fish_comp.get_variable('completionsdir')
 	else
 		fish_install_dir = datadir + '/fish/vendor_completions.d'
 	endif
