@@ -100,6 +100,9 @@ struct swaylock_state {
 	struct wl_shm *shm;
 	struct wl_list surfaces;
 	struct wl_list images;
+	cairo_surface_t *indicator_image;
+	int indicator_image_width;
+	int indicator_image_height;
 	struct swaylock_args args;
 	struct swaylock_password password;
 	struct swaylock_xkb xkb;

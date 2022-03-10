@@ -799,6 +799,42 @@ static char *join_args(char **argv, int argc) {
 	return res;
 }
 
+static void load_indicator_image(char* path, struct swaylock_state *state){
+	if (!strcmp(path, "")) return;
+
+	cairo_surface_t *image;
+#if HAVE_GDK_PIXBUF
+	GError *err = NULL;
+	GdkPixbuf *pixbuf = gdk_pixbuf_new_from_file(path, &err);
+	if (!pixbuf) {
+		swaylock_log(LOG_ERROR, "Failed to load indicator image (%s).",
+				err->message);
+		return;
+	}
+	image = gdk_cairo_image_surface_create_from_pixbuf(pixbuf);
+	g_object_unref(pixbuf);
+#else
+	image = cairo_image_surface_create_from_png(path);
+#endif // HAVE_GDK_PIXBUF
+	if (!image) {
+		swaylock_log(LOG_ERROR, "Failed to read indicator image.");
+		return;
+	}
+	if (cairo_surface_status(image) != CAIRO_STATUS_SUCCESS) {
+		swaylock_log(LOG_ERROR, "Failed to read indicator image: %s."
+#if !HAVE_GDK_PIXBUF
+				"\nSway was compiled without gdk_pixbuf support, so only"
+				"\nPNG images can be loaded. This is the likely cause."
+#endif // !HAVE_GDK_PIXBUF
+				, cairo_status_to_string(cairo_surface_status(image)));
+		return;
+	}
+
+	state->indicator_image = image;
+	state->indicator_image_height = cairo_image_surface_get_height (image);
+	state->indicator_image_width = cairo_image_surface_get_width (image);
+}
+
 static void load_image(char *arg, struct swaylock_state *state) {
 	// [[<output>]:]<path>
 	struct swaylock_image *image = calloc(1, sizeof(struct swaylock_image));
@@ -920,6 +956,7 @@ static int parse_options(int argc, char **argv, struct swaylock_state *state,
 		LO_IND_X_POSITION,
 		LO_IND_Y_POSITION,
 		LO_IND_THICKNESS,
+		LO_IND_IMAGE,
 		LO_INSIDE_COLOR,
 		LO_INSIDE_CLEAR_COLOR,
 		LO_INSIDE_CAPS_LOCK_COLOR,
@@ -995,6 +1032,7 @@ static int parse_options(int argc, char **argv, struct swaylock_state *state,
 		{"indicator-thickness", required_argument, NULL, LO_IND_THICKNESS},
 		{"indicator-x-position", required_argument, NULL, LO_IND_X_POSITION},
 		{"indicator-y-position", required_argument, NULL, LO_IND_Y_POSITION},
+		{"indicator-image", required_argument, NULL, LO_IND_IMAGE},
 		{"inside-color", required_argument, NULL, LO_INSIDE_COLOR},
 		{"inside-clear-color", required_argument, NULL, LO_INSIDE_CLEAR_COLOR},
 		{"inside-caps-lock-color", required_argument, NULL, LO_INSIDE_CAPS_LOCK_COLOR},
@@ -1119,6 +1157,8 @@ static int parse_options(int argc, char **argv, struct swaylock_state *state,
 			"Sets the horizontal position of the indicator.\n"
 		"  --indicator-y-position <y>       "
 			"Sets the vertical position of the indicator.\n"
+		"  --indicator-image <path>       "
+			"Display the given image inside of the indicator.\n"
 		"  --inside-color <color>           "
 			"Sets the color of the inside of the indicator.\n"
 		"  --inside-clear-color <color>     "
@@ -1350,6 +1390,11 @@ static int parse_options(int argc, char **argv, struct swaylock_state *state,
 			if (state) {
 				state->args.override_indicator_y_position = true;
 				state->args.indicator_y_position = atoi(optarg);
+			}
+			break;
+		case LO_IND_IMAGE:
+			if (state) {
+				load_indicator_image(optarg, state);
 			}
 			break;
 		case LO_INSIDE_COLOR:
