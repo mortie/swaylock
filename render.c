@@ -222,7 +222,7 @@ void render_frame(struct swaylock_surface *surface) {
 			int smallest = MIN(height, width);
 			double radius = arc_radius - arc_thickness * 0.5;
 			double scale = radius * 2 / smallest;
-			double offset = buffer_height * 0.5 / scale - smallest * 0.5;
+			double offset = buffer_diameter * 0.5 / scale - smallest * 0.5;
 
 			// Create the arc that clips the image
 			cairo_arc(cairo,
