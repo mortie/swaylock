@@ -1192,7 +1192,7 @@ static int parse_options(int argc, char **argv, struct swaylock_state *state,
 			"Sets the horizontal position of the indicator.\n"
 		"  --indicator-y-position <y>       "
 			"Sets the vertical position of the indicator.\n"
-		"  --indicator-image <path>       "
+		"  --indicator-image <path>         "
 			"Display the given image inside of the indicator.\n"
 		"  --inside-color <color>           "
 			"Sets the color of the inside of the indicator.\n"
