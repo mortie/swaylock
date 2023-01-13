@@ -1,4 +1,6 @@
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 #include <cairo/cairo.h>
 #include "cairo.h"
 #if HAVE_GDK_PIXBUF
@@ -27,6 +29,18 @@ cairo_subpixel_order_t to_cairo_subpixel_order(enum wl_output_subpixel subpixel)
 		return CAIRO_SUBPIXEL_ORDER_DEFAULT;
 	}
 	return CAIRO_SUBPIXEL_ORDER_DEFAULT;
+}
+
+cairo_surface_t *cairo_surface_duplicate(cairo_surface_t *src) {
+	uint32_t stride = cairo_image_surface_get_stride(src);
+	uint32_t height = cairo_image_surface_get_height(src);
+	uint32_t width = cairo_image_surface_get_width(src);
+	cairo_format_t format = cairo_image_surface_get_format(src);
+
+	void *new_data = malloc(stride * height);
+	memcpy(new_data, cairo_image_surface_get_data(src), stride * height);
+
+	return cairo_image_surface_create_for_data(new_data, format, width, height, stride);
 }
 
 #if HAVE_GDK_PIXBUF

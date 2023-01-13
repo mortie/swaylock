@@ -15,6 +15,8 @@ cairo_subpixel_order_t to_cairo_subpixel_order(enum wl_output_subpixel subpixel)
 cairo_surface_t *cairo_image_surface_scale(cairo_surface_t *image,
 		int width, int height);
 
+cairo_surface_t *cairo_surface_duplicate(cairo_surface_t *src);
+
 #if HAVE_GDK_PIXBUF
 
 cairo_surface_t* gdk_cairo_image_surface_create_from_pixbuf(
