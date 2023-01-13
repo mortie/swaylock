@@ -92,7 +92,7 @@ The original [mortie/swaylock-effects](https://github.com/mortie/swaylock-effect
 has been packaged for:
 
 * Fedora (Copr): [swaylock-effects](https://copr.fedorainfracloud.org/coprs/eddsalkield/swaylock-effects/)
-  (originally by Edd Salkield, now looking for a new maintainer)
+  (thanks to Edd Salkield)
 * FreeBSD: [swaylock-effects](https://www.freshports.org/x11/swaylock-effects/)
 * Gentoo (GURU overlay): [swaylock-effects](https://gpo.zugaina.org/Overlays/guru/gui-apps/swaylock-effects)
 * T2 SDE: [swaylock-effects](https://t2sde.org/packages/swaylock-effects)
