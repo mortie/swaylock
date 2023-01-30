@@ -182,6 +182,11 @@ executable('swaylock',
 	install: true
 )
 
+executable('swaylockd',
+	'swaylockd.c',
+	install: true
+)
+
 install_data(
 	'pam/swaylock',
 	install_dir: sysconfdir + '/pam.d/'
@@ -192,6 +197,7 @@ if scdoc.found()
 	mandir = get_option('mandir')
 	man_files = [
 		'swaylock.1.scd',
+		'swaylockd.1.scd',
 	]
 	foreach filename : man_files
 		topic = filename.split('.')[-3].split('/')[-1]
