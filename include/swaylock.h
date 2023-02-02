@@ -10,6 +10,7 @@
 #include "effects.h"
 #include "fade.h"
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
+#include "wlr-output-power-management-unstable-v1-client-protocol.h"
 
 enum auth_state {
 	AUTH_STATE_IDLE,
@@ -80,6 +81,7 @@ struct swaylock_args {
 	uint32_t password_grace_period;
 	bool password_grace_no_mouse;
 	bool password_grace_no_touch;
+	bool use_dpms;
 };
 
 struct swaylock_password {
@@ -110,6 +112,7 @@ struct swaylock_state {
 	size_t n_screenshots_done;
 	bool run_display;
 	struct zxdg_output_manager_v1 *zxdg_output_manager;
+	struct zwlr_output_power_manager_v1 *zwlr_output_power_manager;
 };
 
 struct swaylock_surface {
@@ -143,6 +146,9 @@ struct swaylock_surface {
 	enum wl_output_transform transform;
 	char *output_name;
 	struct wl_list link;
+	struct zwlr_output_power_v1 *wlr_output_power;
+	enum zwlr_output_power_v1_mode power_mode;
+	bool power_mode_pending;
 };
 
 // There is exactly one swaylock_image for each -i argument

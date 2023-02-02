@@ -27,6 +27,7 @@
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
 #include "wlr-screencopy-unstable-v1-client-protocol.h"
 #include "xdg-output-unstable-v1-client-protocol.h"
+#include "wlr-output-power-management-unstable-v1-client-protocol.h"
 
 // returns a positive integer in milliseconds
 static uint32_t parse_seconds(const char *seconds) {
@@ -246,6 +247,9 @@ static void destroy_surface(struct swaylock_surface *surface) {
 	if (surface->layer_surface != NULL) {
 		zwlr_layer_surface_v1_destroy(surface->layer_surface);
 	}
+	if (surface->wlr_output_power != NULL) {
+		zwlr_output_power_v1_destroy(surface->wlr_output_power);
+	}
 	if (surface->surface != NULL) {
 		wl_surface_destroy(surface->surface);
 	}
@@ -271,6 +275,19 @@ static bool surface_is_opaque(struct swaylock_surface *surface) {
 		return cairo_surface_get_content(surface->image) == CAIRO_CONTENT_COLOR;
 	}
 	return (surface->state->args.colors.background & 0xff) == 0xff;
+}
+
+struct zwlr_output_power_v1_listener _wlr_output_power_listener;
+
+static void create_output_power(struct swaylock_surface *surface) {
+	struct swaylock_state *state = surface->state;
+
+	if (state->zwlr_output_power_manager) {
+		surface->wlr_output_power = zwlr_output_power_manager_v1_get_output_power(
+				state->zwlr_output_power_manager, surface->output);
+		zwlr_output_power_v1_add_listener(
+				surface->wlr_output_power, &_wlr_output_power_listener, surface);
+	}
 }
 
 struct zxdg_output_v1_listener _xdg_output_listener;
@@ -402,6 +419,26 @@ static const struct wl_callback_listener surface_frame_listener = {
 	.done = surface_frame_handle_done,
 };
 
+void set_dpms(struct swaylock_state *state) {
+	if (!state->args.use_dpms) {
+		return;
+	}
+
+	enum zwlr_output_power_v1_mode intended_mode = state->auth_state == AUTH_STATE_IDLE ?
+		ZWLR_OUTPUT_POWER_V1_MODE_OFF : ZWLR_OUTPUT_POWER_V1_MODE_ON;
+
+	struct swaylock_surface *surface;
+	wl_list_for_each(surface, &state->surfaces, link) {
+		if (!surface->wlr_output_power || surface->power_mode_pending ||
+				surface->power_mode == intended_mode) {
+			continue;
+		}
+
+		zwlr_output_power_v1_set_mode(surface->wlr_output_power, intended_mode);
+		surface->power_mode_pending = true;
+	}
+}
+
 void damage_surface(struct swaylock_surface *surface) {
 	surface->dirty = true;
 	if (surface->frame_pending) {
@@ -419,6 +456,8 @@ void damage_state(struct swaylock_state *state) {
 	wl_list_for_each(surface, &state->surfaces, link) {
 		damage_surface(surface);
 	}
+
+	set_dpms(state);
 }
 
 static void handle_wl_output_geometry(void *data, struct wl_output *wl_output,
@@ -702,6 +741,28 @@ struct zxdg_output_v1_listener _xdg_output_listener = {
 	.description = handle_xdg_output_description,
 };
 
+static void handle_wlr_output_power_mode(void *data,
+		struct zwlr_output_power_v1 *output_power, uint32_t mode) {
+	struct swaylock_surface *surface = data;
+	assert(surface->wlr_output_power == output_power);
+	surface->power_mode = mode;
+	surface->power_mode_pending = false;
+}
+
+static void handle_wlr_output_power_failed(void *data,
+		struct zwlr_output_power_v1 *output_power) {
+	struct swaylock_surface *surface = data;
+	swaylock_log(LOG_ERROR, "wlr_output_power_set_mode failed");
+	assert(surface->wlr_output_power == output_power);
+	surface->wlr_output_power = NULL;
+	zwlr_output_power_v1_destroy(output_power);
+}
+
+struct zwlr_output_power_v1_listener _wlr_output_power_listener = {
+	.mode = handle_wlr_output_power_mode,
+	.failed = handle_wlr_output_power_failed,
+};
+
 static void handle_global(void *data, struct wl_registry *registry,
 		uint32_t name, const char *interface, uint32_t version) {
 
@@ -731,6 +792,9 @@ static void handle_global(void *data, struct wl_registry *registry,
 	} else if (strcmp(interface, zxdg_output_manager_v1_interface.name) == 0) {
 		state->zxdg_output_manager = wl_registry_bind(
 				registry, name, &zxdg_output_manager_v1_interface, 2);
+	} else if (strcmp(interface, zwlr_output_power_manager_v1_interface.name) == 0) {
+		state->zwlr_output_power_manager = wl_registry_bind(
+				registry, name, &zwlr_output_power_manager_v1_interface, 1);
 	} else if (strcmp(interface, wl_output_interface.name) == 0) {
 		struct swaylock_surface *surface =
 			calloc(1, sizeof(struct swaylock_surface));
@@ -742,8 +806,10 @@ static void handle_global(void *data, struct wl_registry *registry,
 		wl_list_insert(&state->surfaces, &surface->link);
 
 		if (state->run_display) {
+			create_output_power(surface);
 			create_layer_surface(surface);
 			wl_display_roundtrip(state->display);
+			set_dpms(surface->state);
 		}
 	} else if (strcmp(interface, zwlr_screencopy_manager_v1_interface.name) == 0) {
 		state->screencopy_manager = wl_registry_bind(registry, name,
@@ -968,6 +1034,7 @@ static int parse_options(int argc, char **argv, struct swaylock_state *state,
 		{"config", required_argument, NULL, 'C'},
 		{"color", required_argument, NULL, 'c'},
 		{"debug", no_argument, NULL, 'd'},
+		{"dpms", no_argument, NULL, 'D'},
 		{"trace", no_argument, NULL, LO_TRACE},
 		{"ignore-empty-password", no_argument, NULL, 'e'},
 		{"daemonize", no_argument, NULL, 'f'},
@@ -1049,6 +1116,8 @@ static int parse_options(int argc, char **argv, struct swaylock_state *state,
 			"Turn the screen into the given color instead of white.\n"
 		"  -d, --debug                      "
 			"Enable debugging output.\n"
+		"  -D, --dpms                       "
+			"Power off displays using DPMS when lockscreen is idle.\n"
 		"  -t, --trace                      "
 			"Enable tracing output.\n"
 		"  -e, --ignore-empty-password      "
@@ -1200,7 +1269,7 @@ static int parse_options(int argc, char **argv, struct swaylock_state *state,
 	optind = 1;
 	while (1) {
 		int opt_idx = 0;
-		c = getopt_long(argc, argv, "c:deFfhi:SkKLlnrs:tuvC:", long_options,
+		c = getopt_long(argc, argv, "c:dDeFfhi:SkKLlnrs:tuvC:", long_options,
 				&opt_idx);
 		if (c == -1) {
 			break;
@@ -1218,6 +1287,11 @@ static int parse_options(int argc, char **argv, struct swaylock_state *state,
 			break;
 		case 'd':
 			swaylock_log_init(LOG_DEBUG);
+			break;
+		case 'D':
+			if (state) {
+				state->args.use_dpms = true;
+			}
 			break;
 		case LO_TRACE:
 			swaylock_log_init(LOG_TRACE);
@@ -1753,6 +1827,7 @@ int main(int argc, char **argv) {
 		.timestr = strdup("%T"),
 		.datestr = strdup("%a, %x"),
 		.password_grace_period = 0,
+		.use_dpms = false
 	};
 	wl_list_init(&state.images);
 	set_default_colors(&state.args.colors);
@@ -1848,10 +1923,19 @@ int main(int argc, char **argv) {
 				iter_image->cairo_surface, &state, 1);
 	}
 
+	if (!state.zwlr_output_power_manager) {
+		swaylock_log(LOG_INFO, "Compositor does not support zwlr_output_power_"
+				"manager, DPMS will not work");
+	}
+
 	struct swaylock_surface *surface;
 	wl_list_for_each(surface, &state.surfaces, link) {
+		create_output_power(surface);
 		create_layer_surface(surface);
 	}
+
+	wl_display_roundtrip(state.display);
+	set_dpms(&state);
 
 	wl_list_for_each(surface, &state.surfaces, link) {
 		while (surface->events_pending > 0) {
@@ -1888,6 +1972,10 @@ int main(int argc, char **argv) {
 		}
 		loop_poll(state.eventloop);
 	}
+
+	// auth_state is now AUTH_STATE_VALIDATING, meaning this call will
+	// ensure the display(s) are on.
+	set_dpms(&state);
 
 	if (state.args.daemonize && state.args.fade_in) {
 		daemonize_done(&daemonfd); // In case we exit before --fade-in timeout
