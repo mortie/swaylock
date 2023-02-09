@@ -1,8 +1,15 @@
+#define _DEFAULT_SOURCE
 #include <assert.h>
 #include "background-image.h"
 #include "cairo.h"
 #include "log.h"
 #include "swaylock.h"
+
+#ifdef __FreeBSD__
+#	include <sys/endian.h>
+#else
+#	include <endian.h>
+#endif
 
 // Cairo RGB24 uses 32 bits per pixel, as XRGB, in native endianness.
 // xrgb32_le uses 32 bits per pixel, as XRGB, little endian (BGRX big endian).
@@ -28,6 +35,58 @@ void cairo_rgb24_from_xbgr32_le(unsigned char *buf, int width, int height, int s
 				(uint32_t)pix[0] << 16 |
 				(uint32_t)pix[1] << 8 |
 				(uint32_t)pix[2];
+		}
+	}
+}
+
+void cairo_rgb24_from_xrgb2101010_le(unsigned char *buf, int width, int height, int stride) {
+	for (int y = 0; y < height; ++y) {
+		for (int x = 0; x < width; ++x) {
+			uint32_t *pix = (uint32_t *) (buf + y * stride + x * 4);
+			uint32_t color = le32toh(*pix);
+			*pix = 0 |
+				((color >> 22) & 0xFF) << 16 |
+				((color >> 12) & 0xFF) << 8 |
+				((color >> 2) & 0xFF);
+		}
+	}
+}
+
+void cairo_rgb24_from_xbgr2101010_le(unsigned char *buf, int width, int height, int stride) {
+	for (int y = 0; y < height; ++y) {
+		for (int x = 0; x < width; ++x) {
+			uint32_t *pix = (uint32_t *) (buf + y * stride + x * 4);
+			uint32_t color = le32toh(*pix);
+			*pix = 0 |
+				((color >> 2) & 0xFF) << 16 |
+				((color >> 12) & 0xFF) << 8 |
+				((color >> 22) & 0xFF);
+		}
+	}
+}
+
+void cairo_rgb24_from_rgbx1010102_le(unsigned char *buf, int width, int height, int stride) {
+	for (int y = 0; y < height; ++y) {
+		for (int x = 0; x < width; ++x) {
+			uint32_t *pix = (uint32_t *) (buf + y * stride + x * 4);
+			uint32_t color = le32toh(*pix);
+			*pix = 0 |
+				((color >> 24) & 0xFF) << 16 |
+				((color >> 14) & 0xFF) << 8 |
+				((color >> 4) & 0xFF);
+		}
+	}
+}
+
+void cairo_rgb24_from_bgrx1010102_le(unsigned char *buf, int width, int height, int stride) {
+	for (int y = 0; y < height; ++y) {
+		for (int x = 0; x < width; ++x) {
+			uint32_t *pix = (uint32_t *) (buf + y * stride + x * 4);
+			uint32_t color = le32toh(*pix);
+			*pix = 0 |
+				((color >> 4) & 0xFF) << 16 |
+				((color >> 14) & 0xFF) << 8 |
+				((color >> 24) & 0xFF);
 		}
 	}
 }
@@ -163,19 +222,54 @@ cairo_surface_t *load_background_from_buffer(void *buf, uint32_t format,
 		break;
 	}
 
-	if (format == WL_SHM_FORMAT_XBGR8888 || format == WL_SHM_FORMAT_ABGR8888) {
+	switch (format) {
+	case WL_SHM_FORMAT_XBGR8888:
+	case WL_SHM_FORMAT_ABGR8888:
 		cairo_rgb24_from_xbgr32_le(
 				cairo_image_surface_get_data(image),
 				cairo_image_surface_get_width(image),
 				cairo_image_surface_get_height(image),
 				cairo_image_surface_get_stride(image));
-	} else {
-		if (format != WL_SHM_FORMAT_XRGB8888 && format != WL_SHM_FORMAT_ARGB8888) {
-			swaylock_log(LOG_ERROR,
-					"Unknown pixel format: %u. Assuming XRGB32. Colors may look wrong.",
-					format);
-		}
-
+		break;
+	case WL_SHM_FORMAT_XRGB2101010:
+	case WL_SHM_FORMAT_ARGB2101010:
+		cairo_rgb24_from_xrgb2101010_le(
+				cairo_image_surface_get_data(image),
+				cairo_image_surface_get_width(image),
+				cairo_image_surface_get_height(image),
+				cairo_image_surface_get_stride(image));
+		break;
+	case WL_SHM_FORMAT_XBGR2101010:
+	case WL_SHM_FORMAT_ABGR2101010:
+		cairo_rgb24_from_xbgr2101010_le(
+				cairo_image_surface_get_data(image),
+				cairo_image_surface_get_width(image),
+				cairo_image_surface_get_height(image),
+				cairo_image_surface_get_stride(image));
+		break;
+	case WL_SHM_FORMAT_RGBX1010102:
+	case WL_SHM_FORMAT_RGBA1010102:
+		cairo_rgb24_from_rgbx1010102_le(
+				cairo_image_surface_get_data(image),
+				cairo_image_surface_get_width(image),
+				cairo_image_surface_get_height(image),
+				cairo_image_surface_get_stride(image));
+		break;
+	case WL_SHM_FORMAT_BGRX1010102:
+	case WL_SHM_FORMAT_BGRA1010102:
+		cairo_rgb24_from_bgrx1010102_le(
+				cairo_image_surface_get_data(image),
+				cairo_image_surface_get_width(image),
+				cairo_image_surface_get_height(image),
+				cairo_image_surface_get_stride(image));
+		break;
+	default:
+		swaylock_log(LOG_ERROR,
+				"Unknown pixel format: %u. Assuming XRGB32. Colors may look wrong.",
+				format);
+		// fallthrough
+	case WL_SHM_FORMAT_XRGB8888:
+	case WL_SHM_FORMAT_ARGB8888: {
 		// If we're little endian, we don't have to do anything
 		int test = 1;
 		bool is_little_endian = *(char *)&test == 1;
@@ -186,6 +280,7 @@ cairo_surface_t *load_background_from_buffer(void *buf, uint32_t format,
 					cairo_image_surface_get_height(image),
 					cairo_image_surface_get_stride(image));
 		}
+	}
 	}
 
 	return image;
