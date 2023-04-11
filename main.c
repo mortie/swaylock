@@ -5,12 +5,14 @@
 #include <fcntl.h>
 #include <getopt.h>
 #include <poll.h>
+#include <pwd.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
 #include <wayland-client.h>
@@ -103,7 +105,7 @@ static const char *parse_screen_pos_pair(const char *str, char delim,
 }
 
 static const char *parse_constant(const char *str1, const char *str2) {
-	size_t len = strlen(str2); 
+	size_t len = strlen(str2);
 	if (strncmp(str1, str2, len) == 0) {
 		return str1 + len;
 	} else {
@@ -957,6 +959,8 @@ static int parse_options(int argc, char **argv, struct swaylock_state *state,
 		LO_CLOCK,
 		LO_TIMESTR,
 		LO_DATESTR,
+		LO_LOCK_SYMBOL,
+		LO_USER,
 		LO_FADE_IN,
 		LO_SUBMIT_ON_TOUCH,
 		LO_GRACE,
@@ -1032,6 +1036,8 @@ static int parse_options(int argc, char **argv, struct swaylock_state *state,
 		{"clock", no_argument, NULL, LO_CLOCK},
 		{"timestr", required_argument, NULL, LO_TIMESTR},
 		{"datestr", required_argument, NULL, LO_DATESTR},
+		{"lock-symbol", no_argument, NULL, LO_LOCK_SYMBOL},
+		{"user", no_argument, NULL, LO_USER},
 		{"fade-in", required_argument, NULL, LO_FADE_IN},
 		{"submit-on-touch", no_argument, NULL, LO_SUBMIT_ON_TOUCH},
 		{"grace", required_argument, NULL, LO_GRACE},
@@ -1095,6 +1101,10 @@ static int parse_options(int argc, char **argv, struct swaylock_state *state,
 			"The format string for the time. Defaults to '%T'.\n"
 		"  --datestr <format>               "
 			"The format string for the date. Defaults to '%a, %x'.\n"
+		"  --lock-symbol                    "
+			"Show a lock symbol. (Requires Font Awesome 5 Free.)\n"
+		"  --user                           "
+			"Show name of locked user.\n"
 		"  -v, --version                    "
 			"Show the version number and quit.\n"
 		"  --bs-hl-color <color>            "
@@ -1575,6 +1585,16 @@ static int parse_options(int argc, char **argv, struct swaylock_state *state,
 				state->args.datestr = strdup(optarg);
 			}
 			break;
+		case LO_LOCK_SYMBOL:
+			if (state) {
+				state->args.lock_symbol = true;
+			}
+			break;
+		case LO_USER:
+			if (state) {
+				state->args.user = true;
+			}
+			break;
 		case LO_FADE_IN:
 			if (state) {
 				state->args.fade_in = parse_seconds(optarg);
@@ -1718,11 +1738,19 @@ static void timer_render(void *data) {
 	loop_add_timer(state->eventloop, 1000, timer_render, state);
 }
 
+static void get_username(char **ustr) {
+	uid_t uid = geteuid();
+	struct passwd *pw = getpwuid(uid);
+	if (pw)
+		*ustr = pw->pw_name;
+	else
+		*ustr = NULL;
+}
+
 int main(int argc, char **argv) {
 	swaylock_log_init(LOG_ERROR);
 	initialize_pw_backend(argc, argv);
 	srand(time(NULL));
-
 	enum line_mode line_mode = LM_LINE;
 	state.failed_attempts = 0;
 	state.indicator_dirty = false;
@@ -1752,6 +1780,8 @@ int main(int argc, char **argv) {
 		.clock = false,
 		.timestr = strdup("%T"),
 		.datestr = strdup("%a, %x"),
+		.lock_symbol = false,
+		.user = false,
 		.password_grace_period = 0,
 	};
 	wl_list_init(&state.images);
@@ -1795,6 +1825,9 @@ int main(int argc, char **argv) {
 	if (state.args.password_grace_period > 0) {
 		state.auth_state = AUTH_STATE_GRACE;
 	}
+
+	if (state.args.user)
+		get_username(&(state.username));
 
 #ifdef __linux__
 	// Most non-linux platforms require root to mlock()

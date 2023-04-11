@@ -77,6 +77,12 @@ Locks your Wayland session.
 *--datestr* <format>
 	The date format for the indicator clock. Defaults to '%a, %x'.
 
+*--lock-symbol*
+	Show a lock symbol in the indicator. (Requires Font Awesome 5 Free.)
+
+*--user*
+	Show username in the indicator.
+
 *-i, --image* [[<output>]:]<path>
 	Display the given image, optionally only on the given output. Use -c to set
 	a background color. If the path potentially contains a ':', prefix it with another

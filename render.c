@@ -139,6 +139,23 @@ void render_background_fade_prepare(struct swaylock_surface *surface, struct poo
 	wl_surface_commit(surface->surface);
 }
 
+void render_lock_symbol(cairo_t *cairo, char *lock_symbol, int buffer_width, int buffer_diameter, double line_y) {
+	cairo_text_extents_t lock_extents;
+	cairo_font_extents_t lock_fe;
+	double lock_x, lock_y;
+	cairo_select_font_face(cairo, "Font Awesome 5 Free",
+		CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+	cairo_text_extents(cairo, lock_symbol, &lock_extents);
+	cairo_font_extents(cairo, &lock_fe);
+	lock_x = (buffer_width / 2) - (lock_extents.width / 2 + lock_extents.x_bearing);
+	if (buffer_diameter > 0) {
+		lock_y = (buffer_diameter / 2) + (lock_fe.height / 2 - lock_fe.descent) - lock_fe.height / 10;
+	} else
+		lock_y = line_y - lock_fe.height * 1.25f;
+	cairo_move_to(cairo, lock_x, lock_y);
+	cairo_show_text(cairo, lock_symbol);
+}
+
 void render_frame(struct swaylock_surface *surface) {
 	struct swaylock_state *state = surface->state;
 
@@ -233,6 +250,7 @@ void render_frame(struct swaylock_surface *surface) {
 		char *text = NULL;
 		char *text_l1 = NULL;
 		char *text_l2 = NULL;
+		char lock_symbol[4] = "";
 		const char *layout_text = NULL;
 		double font_size;
 		char attempts[4]; // like i3lock: count no more than 999
@@ -248,6 +266,7 @@ void render_frame(struct swaylock_surface *surface) {
 		switch (state->auth_state) {
 		case AUTH_STATE_VALIDATING:
 			text = "verifying";
+			snprintf(lock_symbol, 4, "");
 			break;
 		case AUTH_STATE_INVALID:
 			text = "wrong";
@@ -271,6 +290,8 @@ void render_frame(struct swaylock_surface *surface) {
 				}
 			} else if (state->args.clock) {
 				timetext(surface, &text_l1, &text_l2);
+			} else if (state->args.user) {
+				text = state->username;
 			}
 
 			xkb_layout_index_t num_layout = xkb_keymap_num_layouts(state->xkb.keymap);
@@ -291,6 +312,8 @@ void render_frame(struct swaylock_surface *surface) {
 		default:
 			if (state->args.clock)
 				timetext(surface, &text_l1, &text_l2);
+			else if (state->args.user)
+				text = state->username;
 			break;
 		}
 
@@ -309,6 +332,12 @@ void render_frame(struct swaylock_surface *surface) {
 				(extents.width / 2 + extents.x_bearing);
 			y = (buffer_diameter / 2) +
 				(fe.height / 2 - fe.descent);
+
+			if (state->args.lock_symbol) {
+				render_lock_symbol(cairo, lock_symbol, buffer_width, 0, y);
+				cairo_select_font_face(cairo, state->args.font,
+					CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+			}
 
 			cairo_move_to(cairo, x, y);
 			cairo_show_text(cairo, text);
@@ -339,7 +368,8 @@ void render_frame(struct swaylock_surface *surface) {
 
 			/* Bottom */
 
-			cairo_set_font_size(cairo, arc_radius / 6.0f);
+			if (! (state->args.font_size > 0))
+				cairo_set_font_size(cairo, arc_radius / 6.0f);
 			cairo_text_extents(cairo, text_l2, &extents_l2);
 			cairo_font_extents(cairo, &fe_l2);
 			x_l2 = (buffer_width / 2) -
@@ -351,14 +381,32 @@ void render_frame(struct swaylock_surface *surface) {
 			cairo_show_text(cairo, text_l2);
 			cairo_close_path(cairo);
 			cairo_new_sub_path(cairo);
+			cairo_set_font_size(cairo, font_size);
+
+			/* Lock symbol */
+
+			if (state->args.lock_symbol) {
+				render_lock_symbol(cairo, lock_symbol, buffer_width, 0, y_l1);
+				cairo_select_font_face(cairo, state->args.font,
+					CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+			}
+
+			cairo_close_path(cairo);
+			cairo_new_sub_path(cairo);
 
 			if (new_width < extents_l1.width)
 				new_width = extents_l1.width;
 			if (new_width < extents_l2.width)
 				new_width = extents_l2.width;
 
-
+		} else if (state->args.lock_symbol) {
+			cairo_set_font_size(cairo, arc_radius / 1.5f);
+			render_lock_symbol(cairo, lock_symbol, buffer_width, buffer_diameter, 0.0f);
+			cairo_select_font_face(cairo, state->args.font,
+				CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
 			cairo_set_font_size(cairo, font_size);
+			cairo_close_path(cairo);
+			cairo_new_sub_path(cairo);
 		}
 
 		// Typing indicator: Highlight random part on keypress

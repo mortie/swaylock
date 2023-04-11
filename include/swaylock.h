@@ -75,6 +75,8 @@ struct swaylock_args {
 	bool clock;
 	char *timestr;
 	char *datestr;
+	bool lock_symbol;
+	bool user;
 	uint32_t fade_in;
 	bool password_submit_on_touch;
 	uint32_t password_grace_period;
@@ -104,6 +106,7 @@ struct swaylock_state {
 	struct swaylock_password password;
 	struct swaylock_xkb xkb;
 	enum auth_state auth_state;
+	char *username;
 	bool indicator_dirty;
 	int render_randnum;
 	int failed_attempts;
