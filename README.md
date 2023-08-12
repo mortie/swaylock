@@ -160,7 +160,7 @@ Base and factor should be between 0 and 1.
 	* Default: The size of the image file.
 * `<gravity>`: Optional. Determine which point of the image is placed at `<position>`.
 	* Possible values: `center`, `north`, `south`, `west`, `east`,
-	  `northwest`, `northeast`, southwest`, `southeast`.
+	  `northwest`, `northeast`, `southwest`, `southeast`.
 	* With a `<gravity>` of `northwest`, `<position>` gives the location of the top/left
 	  corner of the image; with `southeast`, `<position>` controls the bottom/right corner,
 	  `center` controls the middle of the image, etc.
