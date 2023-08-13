@@ -5,7 +5,11 @@ which adds built-in screenshots and image manipulation effects like blurring.
 It's inspired by [i3lock-color](https://github.com/PandorasFox/i3lock-color),
 although the feature sets aren't perfectly overlapping.
 
-![Screenshot](https://raw.githubusercontent.com/mortie/swaylock-effects/master/screenshot.png)
+This repository ([jirutka/swaylock-effects](https://github.com/jirutka/swaylock-effects))
+is a fork of [mortie/swaylock-effects](https://github.com/mortie/swaylock-effects)
+which is no longer maintained.
+
+![Screenshot](https://raw.githubusercontent.com/jirutka/swaylock-effects/master/screenshot.png)
 
 ## Example Command
 
@@ -63,14 +67,32 @@ The main new features compared to upstream swaylock are:
 New feature ideas are welcome as issues (though I may never get around to
 implement them), new feature implementations are welcome as pull requests :)
 
+## Versions
+
+swaylock-effects continuously incorporates changes from the original [swaylock](https://github.com/swaywm/swaylock).
+The following table shows the relation between the swaylock-effect and swaylock versions.
+
+| swaylock-effects | swaylock (original)                                                                                 |
+| ---------------- | --------------------------------------------------------------------------------------------------- |
+| 1.6-0            | [1.5](https://github.com/swaywm/swaylock/tree/1.5)                                                  |
+| 1.6-1            | 1.5-7-g[a99afe6a](https://github.com/swaywm/swaylock/tree/a99afe6a7075c962da72b140f02e18318052d833) |
+| 1.6-2            | 1.5-9-g[235b925d](https://github.com/swaywm/swaylock/tree/235b925df7e1bb82d98f1ac8c02e8f85d0a54ee9) |
+| 1.6-3            | 1.5-9-g[235b925d](https://github.com/swaywm/swaylock/tree/235b925df7e1bb82d98f1ac8c02e8f85d0a54ee9) |
+| 1.6.10           | [1.6](https://github.com/swaywm/swaylock/tree/1.6)                                                  |
+
+
 ## Installation
 
 ### From Packages
 
 * Alpine Linux: [swaylock-effects](https://pkgs.alpinelinux.org/packages?name=swaylock-effects)
-* Arch Linux (AUR): [swaylock-effects-git](https://aur.archlinux.org/packages/swaylock-effects-git/)
+* Arch Linux (AUR): [swaylock-effects](https://aur.archlinux.org/packages/swaylock-effects/) / [swaylock-effects-git](https://aur.archlinux.org/packages/swaylock-effects-git/)
+
+The original [mortie/swaylock-effects](https://github.com/mortie/swaylock-effects) (now unmaintained)
+has been packaged for:
+
 * Fedora (Copr): [swaylock-effects](https://copr.fedorainfracloud.org/coprs/eddsalkield/swaylock-effects/)
-  (originally by Edd Salkield, now looking for a new maintainer)
+  (thanks to Edd Salkield)
 * FreeBSD: [swaylock-effects](https://www.freshports.org/x11/swaylock-effects/)
 * Gentoo (GURU overlay): [swaylock-effects](https://gpo.zugaina.org/Overlays/guru/gui-apps/swaylock-effects)
 * T2 SDE: [swaylock-effects](https://t2sde.org/packages/swaylock-effects)

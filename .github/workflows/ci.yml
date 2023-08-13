@@ -1,0 +1,41 @@
+name: CI
+on:
+  - push
+  - pull_request
+
+jobs:
+  build:
+    name: Build on Alpine ${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch:
+          - x86_64
+          - aarch64
+          - armv7
+          - ppc64le
+          - riscv64
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v1
+
+      - name: Install latest Alpine Linux for ${{ matrix.arch }}
+        uses: jirutka/setup-alpine@v1
+        with:
+          arch: ${{ matrix.arch }}
+          branch: ${{ matrix.arch == 'riscv64' && 'edge' || 'latest-stable' }}
+          packages: >
+            build-base
+            cairo-dev
+            libxkbcommon-dev
+            linux-pam-dev
+            meson
+            scdoc
+            wayland-dev
+            wayland-protocols
+
+      - name: Build
+        run: |
+          meson -Dgdk-pixbuf=disabled . output
+          meson compile -C output --verbose
+        shell: alpine.sh {0}

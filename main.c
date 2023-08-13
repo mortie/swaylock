@@ -27,6 +27,7 @@
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
 #include "wlr-screencopy-unstable-v1-client-protocol.h"
 #include "xdg-output-unstable-v1-client-protocol.h"
+#include "ext-session-lock-v1-client-protocol.h"
 
 // returns a positive integer in milliseconds
 static uint32_t parse_seconds(const char *seconds) {
@@ -246,6 +247,9 @@ static void destroy_surface(struct swaylock_surface *surface) {
 	if (surface->layer_surface != NULL) {
 		zwlr_layer_surface_v1_destroy(surface->layer_surface);
 	}
+	if (surface->ext_session_lock_surface_v1 != NULL) {
+		ext_session_lock_surface_v1_destroy(surface->ext_session_lock_surface_v1);
+	}
 	if (surface->surface != NULL) {
 		wl_surface_destroy(surface->surface);
 	}
@@ -253,12 +257,12 @@ static void destroy_surface(struct swaylock_surface *surface) {
 	destroy_buffer(&surface->buffers[1]);
 	destroy_buffer(&surface->indicator_buffers[0]);
 	destroy_buffer(&surface->indicator_buffers[1]);
-	fade_destroy(&surface->fade);
 	wl_output_destroy(surface->output);
 	free(surface);
 }
 
 static const struct zwlr_layer_surface_v1_listener layer_surface_listener;
+static const struct ext_session_lock_surface_v1_listener ext_session_lock_surface_v1_listener;
 
 static cairo_surface_t *select_image(struct swaylock_state *state,
 		struct swaylock_surface *surface);
@@ -275,27 +279,14 @@ static bool surface_is_opaque(struct swaylock_surface *surface) {
 
 struct zxdg_output_v1_listener _xdg_output_listener;
 
-static void create_layer_surface(struct swaylock_surface *surface) {
+static void create_surface(struct swaylock_surface *surface) {
 	struct swaylock_state *state = surface->state;
 
-	if (state->args.fade_in) {
+	if (state->args.allow_fade && state->args.fade_in) {
 		surface->fade.target_time = state->args.fade_in;
 	}
 
 	surface->image = select_image(state, surface);
-
-	static bool has_printed_zxdg_error = false;
-	if (state->zxdg_output_manager) {
-		surface->xdg_output = zxdg_output_manager_v1_get_xdg_output(
-				state->zxdg_output_manager, surface->output);
-		zxdg_output_v1_add_listener(
-				surface->xdg_output, &_xdg_output_listener, surface);
-		surface->events_pending += 1;
-	} else if (!has_printed_zxdg_error) {
-		swaylock_log(LOG_INFO, "Compositor does not support zxdg output "
-				"manager, images assigned to named outputs will not work");
-		has_printed_zxdg_error = true;
-	}
 
 	surface->surface = wl_compositor_create_surface(state->compositor);
 	assert(surface->surface);
@@ -306,25 +297,33 @@ static void create_layer_surface(struct swaylock_surface *surface) {
 	assert(surface->subsurface);
 	wl_subsurface_set_sync(surface->subsurface);
 
-	surface->layer_surface = zwlr_layer_shell_v1_get_layer_surface(
-			state->layer_shell, surface->surface, surface->output,
-			ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY, "lockscreen");
-	assert(surface->layer_surface);
+	if (state->ext_session_lock_v1) {
+		surface->ext_session_lock_surface_v1 = ext_session_lock_v1_get_lock_surface(
+				state->ext_session_lock_v1, surface->surface, surface->output);
+		ext_session_lock_surface_v1_add_listener(surface->ext_session_lock_surface_v1,
+				&ext_session_lock_surface_v1_listener, surface);
+	} else {
+		surface->layer_surface = zwlr_layer_shell_v1_get_layer_surface(
+				state->layer_shell, surface->surface, surface->output,
+				ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY, "lockscreen");
 
-	zwlr_layer_surface_v1_set_size(surface->layer_surface, 0, 0);
-	zwlr_layer_surface_v1_set_anchor(surface->layer_surface,
-			ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
-			ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT |
-			ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM |
-			ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT);
-	zwlr_layer_surface_v1_set_exclusive_zone(surface->layer_surface, -1);
-	zwlr_layer_surface_v1_set_keyboard_interactivity(
-			surface->layer_surface, true);
-	zwlr_layer_surface_v1_add_listener(surface->layer_surface,
-			&layer_surface_listener, surface);
-	surface->events_pending += 1;
+		zwlr_layer_surface_v1_set_size(surface->layer_surface, 0, 0);
+		zwlr_layer_surface_v1_set_anchor(surface->layer_surface,
+				ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
+				ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT |
+				ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM |
+				ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT);
+		zwlr_layer_surface_v1_set_exclusive_zone(surface->layer_surface, -1);
+		zwlr_layer_surface_v1_set_keyboard_interactivity(
+				surface->layer_surface, true);
+		zwlr_layer_surface_v1_add_listener(surface->layer_surface,
+				&layer_surface_listener, surface);
+		surface->events_pending += 1;
+	}
 
-	wl_surface_commit(surface->surface);
+	if (!state->ext_session_lock_v1) {
+		wl_surface_commit(surface->surface);
+	}
 }
 
 static void initially_render_surface(struct swaylock_surface *surface) {
@@ -339,9 +338,10 @@ static void initially_render_surface(struct swaylock_surface *surface) {
 		wl_region_destroy(region);
 	}
 
-	render_frame_background(surface);
-	render_background_fade_prepare(surface, surface->current_buffer);
-	render_frame(surface);
+	if (!surface->state->ext_session_lock_v1) {
+		render_frame_background(surface, true);
+		render_frame(surface);
+	}
 }
 
 static void layer_surface_configure(void *data,
@@ -371,6 +371,27 @@ static void layer_surface_closed(void *data,
 static const struct zwlr_layer_surface_v1_listener layer_surface_listener = {
 	.configure = layer_surface_configure,
 	.closed = layer_surface_closed,
+};
+
+static void ext_session_lock_surface_v1_handle_configure(void *data,
+		struct ext_session_lock_surface_v1 *lock_surface, uint32_t serial,
+		uint32_t width, uint32_t height) {
+	struct swaylock_surface *surface = data;
+	surface->width = width;
+	surface->height = height;
+	surface->indicator_width = 0;
+	surface->indicator_height = 0;
+	// Render before we send the ACK event, so that we minimize flickering
+	// This means we cannot commit immediately after rendering -- we will have
+	// to send the ACK first and then commit.
+	render_frame_background(surface, false);
+	ext_session_lock_surface_v1_ack_configure(lock_surface, serial);
+	wl_surface_commit(surface->surface);
+	render_frame(surface);
+}
+
+static const struct ext_session_lock_surface_v1_listener ext_session_lock_surface_v1_listener = {
+	.configure = ext_session_lock_surface_v1_handle_configure,
 };
 
 static const struct wl_callback_listener surface_frame_listener;
@@ -403,6 +424,11 @@ static const struct wl_callback_listener surface_frame_listener = {
 };
 
 void damage_surface(struct swaylock_surface *surface) {
+	if (surface->width == 0 || surface->height == 0) {
+		// Not yet configured
+		return;
+	}
+
 	surface->dirty = true;
 	if (surface->frame_pending) {
 		return;
@@ -606,17 +632,18 @@ static void handle_screencopy_frame_ready(void *data,
 			surface->screencopy.transform);
 	if (image == NULL) {
 		swaylock_log(LOG_ERROR, "Failed to create image from screenshot");
+		state->args.screenshots = false;
+		state->args.fade_in = 0; // Fade in is not possible without screenshot
 	} else  {
-		surface->screencopy.image->cairo_surface =
-			apply_effects(image, state, surface->scale);
-		surface->image = surface->screencopy.image->cairo_surface;
+		surface->screencopy.original_image = cairo_surface_duplicate(image);
+		surface->screencopy.image->cairo_surface = image;
+		if (state->args.screenshots) {
+			swaylock_log(LOG_DEBUG, "Loaded screenshot for output %s", surface->output_name);
+			wl_list_insert(&state->images, &surface->screencopy.image->link);
+		}
 	}
 
-	swaylock_log(LOG_DEBUG, "Loaded screenshot for output %s", surface->output_name);
-	wl_list_insert(&state->images, &surface->screencopy.image->link);
-	if (--surface->events_pending == 0) {
-		initially_render_surface(surface);
-	}
+	--surface->events_pending;
 }
 
 static void handle_screencopy_frame_failed(void *data,
@@ -624,10 +651,10 @@ static void handle_screencopy_frame_failed(void *data,
 	swaylock_trace();
 	struct swaylock_surface *surface = data;
 	swaylock_log(LOG_ERROR, "Screencopy failed");
+	surface->state->args.screenshots = false;
+	surface->state->args.fade_in = 0; // Fade in is not possible without screenshot
 
-	if (--surface->events_pending == 0) {
-		initially_render_surface(surface);
-	}
+	--surface->events_pending;
 }
 
 static const struct zwlr_screencopy_frame_v1_listener screencopy_frame_listener = {
@@ -665,33 +692,23 @@ static void handle_xdg_output_done(void *data, struct zxdg_output_v1 *output) {
 	swaylock_trace();
 	struct swaylock_surface *surface = data;
 	struct swaylock_state *state = surface->state;
-	cairo_surface_t *new_image = select_image(surface->state, surface);
 
-	if (new_image == surface->image && state->args.screenshots) {
-		static bool has_printed_screencopy_error = false;
-		if (state->screencopy_manager) {
-			surface->screencopy_frame = zwlr_screencopy_manager_v1_capture_output(
-					state->screencopy_manager, false, surface->output);
-			zwlr_screencopy_frame_v1_add_listener(surface->screencopy_frame,
-					&screencopy_frame_listener, surface);
-			surface->events_pending += 1;
-		} else if (!has_printed_screencopy_error) {
-			swaylock_log(LOG_INFO, "Compositor does not support screencopy manager, "
-					"screenshots will not work");
-			has_printed_screencopy_error = true;
-		}
-	} else if (new_image != NULL) {
-		if (state->args.screenshots) {
-			swaylock_log(LOG_DEBUG,
-					"Using existing image instead of taking a screenshot for output %s.",
-					surface->output_name);
-		}
-		surface->image = new_image;
+	static bool has_printed_screencopy_error = false;
+	if (state->screencopy_manager) {
+		surface->screencopy_frame = zwlr_screencopy_manager_v1_capture_output(
+				state->screencopy_manager, false, surface->output);
+		zwlr_screencopy_frame_v1_add_listener(surface->screencopy_frame,
+				&screencopy_frame_listener, surface);
+		surface->events_pending += 1;
+	} else if (!has_printed_screencopy_error) {
+		swaylock_log(LOG_INFO, "Compositor does not support screencopy manager, "
+				"screenshots / fade-in will not work");
+		state->args.screenshots = false;
+		state->args.fade_in = 0; // Fade in is not possible without screenshot
+		has_printed_screencopy_error = true;
 	}
 
-	if (--surface->events_pending == 0) {
-		initially_render_surface(surface);
-	}
+	--surface->events_pending;
 }
 
 struct zxdg_output_v1_listener _xdg_output_listener = {
@@ -700,6 +717,21 @@ struct zxdg_output_v1_listener _xdg_output_listener = {
 	.done = handle_xdg_output_done,
 	.name = handle_xdg_output_name,
 	.description = handle_xdg_output_description,
+};
+
+static void ext_session_lock_v1_handle_locked(void *data, struct ext_session_lock_v1 *lock) {
+	// Who cares
+}
+
+static void ext_session_lock_v1_handle_finished(void *data, struct ext_session_lock_v1 *lock) {
+	swaylock_log(LOG_ERROR, "Failed to lock session -- "
+			"is another lockscreen running?");
+	exit(2);
+}
+
+static const struct ext_session_lock_v1_listener ext_session_lock_v1_listener = {
+	.locked = ext_session_lock_v1_handle_locked,
+	.finished = ext_session_lock_v1_handle_finished,
 };
 
 static void handle_global(void *data, struct wl_registry *registry,
@@ -742,12 +774,15 @@ static void handle_global(void *data, struct wl_registry *registry,
 		wl_list_insert(&state->surfaces, &surface->link);
 
 		if (state->run_display) {
-			create_layer_surface(surface);
+			create_surface(surface);
 			wl_display_roundtrip(state->display);
 		}
 	} else if (strcmp(interface, zwlr_screencopy_manager_v1_interface.name) == 0) {
 		state->screencopy_manager = wl_registry_bind(registry, name,
 				&zwlr_screencopy_manager_v1_interface, 1);
+	} else if (strcmp(interface, ext_session_lock_manager_v1_interface.name) == 0) {
+		state->ext_session_lock_manager_v1 = wl_registry_bind(registry, name,
+				&ext_session_lock_manager_v1_interface, 1);
 	}
 }
 
@@ -797,6 +832,42 @@ static char *join_args(char **argv, int argc) {
 	}
 	res[len - 1] = '\0';
 	return res;
+}
+
+static void load_indicator_image(char* path, struct swaylock_state *state){
+	if (!strcmp(path, "")) return;
+
+	cairo_surface_t *image;
+#if HAVE_GDK_PIXBUF
+	GError *err = NULL;
+	GdkPixbuf *pixbuf = gdk_pixbuf_new_from_file(path, &err);
+	if (!pixbuf) {
+		swaylock_log(LOG_ERROR, "Failed to load indicator image (%s).",
+				err->message);
+		return;
+	}
+	image = gdk_cairo_image_surface_create_from_pixbuf(pixbuf);
+	g_object_unref(pixbuf);
+#else
+	image = cairo_image_surface_create_from_png(path);
+#endif // HAVE_GDK_PIXBUF
+	if (!image) {
+		swaylock_log(LOG_ERROR, "Failed to read indicator image.");
+		return;
+	}
+	if (cairo_surface_status(image) != CAIRO_STATUS_SUCCESS) {
+		swaylock_log(LOG_ERROR, "Failed to read indicator image: %s."
+#if !HAVE_GDK_PIXBUF
+				"\nSway was compiled without gdk_pixbuf support, so only"
+				"\nPNG images can be loaded. This is the likely cause."
+#endif // !HAVE_GDK_PIXBUF
+				, cairo_status_to_string(cairo_surface_status(image)));
+		return;
+	}
+
+	state->indicator_image = image;
+	state->indicator_image_height = cairo_image_surface_get_height (image);
+	state->indicator_image_width = cairo_image_surface_get_width (image);
 }
 
 static void load_image(char *arg, struct swaylock_state *state) {
@@ -920,6 +991,7 @@ static int parse_options(int argc, char **argv, struct swaylock_state *state,
 		LO_IND_X_POSITION,
 		LO_IND_Y_POSITION,
 		LO_IND_THICKNESS,
+		LO_IND_IMAGE,
 		LO_INSIDE_COLOR,
 		LO_INSIDE_CLEAR_COLOR,
 		LO_INSIDE_CAPS_LOCK_COLOR,
@@ -995,6 +1067,7 @@ static int parse_options(int argc, char **argv, struct swaylock_state *state,
 		{"indicator-thickness", required_argument, NULL, LO_IND_THICKNESS},
 		{"indicator-x-position", required_argument, NULL, LO_IND_X_POSITION},
 		{"indicator-y-position", required_argument, NULL, LO_IND_Y_POSITION},
+		{"indicator-image", required_argument, NULL, LO_IND_IMAGE},
 		{"inside-color", required_argument, NULL, LO_INSIDE_COLOR},
 		{"inside-clear-color", required_argument, NULL, LO_INSIDE_CLEAR_COLOR},
 		{"inside-caps-lock-color", required_argument, NULL, LO_INSIDE_CAPS_LOCK_COLOR},
@@ -1119,6 +1192,8 @@ static int parse_options(int argc, char **argv, struct swaylock_state *state,
 			"Sets the horizontal position of the indicator.\n"
 		"  --indicator-y-position <y>       "
 			"Sets the vertical position of the indicator.\n"
+		"  --indicator-image <path>         "
+			"Display the given image inside of the indicator.\n"
 		"  --inside-color <color>           "
 			"Sets the color of the inside of the indicator.\n"
 		"  --inside-clear-color <color>     "
@@ -1350,6 +1425,11 @@ static int parse_options(int argc, char **argv, struct swaylock_state *state,
 			if (state) {
 				state->args.override_indicator_y_position = true;
 				state->args.indicator_y_position = atoi(optarg);
+			}
+			break;
+		case LO_IND_IMAGE:
+			if (state) {
+				load_indicator_image(optarg, state);
 			}
 			break;
 		case LO_INSIDE_COLOR:
@@ -1693,6 +1773,13 @@ static void display_in(int fd, short mask, void *data) {
 	}
 }
 
+static void end_allow_fade_period(void *data) {
+	struct swaylock_state *state = data;
+	if (state->args.allow_fade) {
+		state->args.allow_fade = false;
+	}
+}
+
 static void end_grace_period(void *data) {
 	struct swaylock_state *state = data;
 	if (state->auth_state == AUTH_STATE_GRACE) {
@@ -1752,6 +1839,7 @@ int main(int argc, char **argv) {
 		.clock = false,
 		.timestr = strdup("%T"),
 		.datestr = strdup("%a, %x"),
+		.allow_fade = true,
 		.password_grace_period = 0,
 	};
 	wl_list_init(&state.images);
@@ -1818,20 +1906,35 @@ int main(int argc, char **argv) {
 	struct wl_registry *registry = wl_display_get_registry(state.display);
 	wl_registry_add_listener(registry, &registry_listener, &state);
 	wl_display_roundtrip(state.display);
-	assert(state.compositor && state.layer_shell && state.shm);
-	if (!state.input_inhibit_manager) {
-		free(state.args.font);
-		swaylock_log(LOG_ERROR, "Compositor does not support the input "
-				"inhibitor protocol, refusing to run insecurely");
+
+	if (!state.compositor || !state.shm) {
+		swaylock_log(LOG_ERROR, "Missing wl_compositor or wl_shm");
 		return 1;
 	}
 
-	zwlr_input_inhibit_manager_v1_get_inhibitor(state.input_inhibit_manager);
-	if (wl_display_roundtrip(state.display) == -1) {
-		free(state.args.font);
-		swaylock_log(LOG_ERROR, "Exiting - failed to inhibit input:"
-				" is another lockscreen already running?");
-		return 2;
+	struct swaylock_surface *surface;
+	if (state.zxdg_output_manager) {
+		// Enumerate all outputs first so that screenshots can be obtained
+		// before ext_session_lock_manager_v1_lock(). After the screen is locked,
+		// no screenshot can be retrieved because normal rendering is blocked.
+		wl_list_for_each(surface, &state.surfaces, link) {
+			surface->xdg_output = zxdg_output_manager_v1_get_xdg_output(
+					state.zxdg_output_manager, surface->output);
+			zxdg_output_v1_add_listener(
+					surface->xdg_output, &_xdg_output_listener, surface);
+			surface->events_pending += 1;
+		};
+
+		wl_list_for_each(surface, &state.surfaces, link) {
+			while (surface->events_pending > 0) {
+				wl_display_roundtrip(state.display);
+			}
+		}
+	} else {
+		swaylock_log(LOG_INFO, "Compositor does not support zxdg output "
+				"manager, images assigned to named outputs will not work");
+		state.args.screenshots = false;
+		state.args.fade_in = 0; // Fade in is not possible without screenshot
 	}
 
 	// Must daemonize before we run any effects, since effects use openmp
@@ -1841,16 +1944,40 @@ int main(int argc, char **argv) {
 		daemonfd = daemonize_start();
 	}
 
-	// Need to apply effects to all images loaded with --image
+	// Need to apply effects to all images *before* requesting ext_session_lock_v1
+	// Otherwise, the screen would be blank while the effects are being applied.
 	struct swaylock_image *iter_image, *temp;
 	wl_list_for_each_safe(iter_image, temp, &state.images, link) {
 		iter_image->cairo_surface = apply_effects(
 				iter_image->cairo_surface, &state, 1);
 	}
 
-	struct swaylock_surface *surface;
+	if (state.ext_session_lock_manager_v1) {
+		swaylock_log(LOG_DEBUG, "Using ext-session-lock-v1");
+		state.ext_session_lock_v1 = ext_session_lock_manager_v1_lock(state.ext_session_lock_manager_v1);
+		ext_session_lock_v1_add_listener(state.ext_session_lock_v1,
+				&ext_session_lock_v1_listener, &state);
+	} else if (state.layer_shell && state.input_inhibit_manager) {
+		swaylock_log(LOG_DEBUG, "Using wlr-layer-shell + wlr-input-inhibitor");
+		zwlr_input_inhibit_manager_v1_get_inhibitor(state.input_inhibit_manager);
+	} else {
+		swaylock_log(LOG_ERROR, "Missing ext-session-lock-v1, wlr-layer-shell "
+				"and wlr-input-inhibitor");
+		return 1;
+	}
+
+	if (wl_display_roundtrip(state.display) == -1) {
+		free(state.args.font);
+		if (state.input_inhibit_manager) {
+			swaylock_log(LOG_ERROR, "Exiting - failed to inhibit input:"
+					" is another lockscreen already running?");
+			return 2;
+		}
+		return 1;
+	}
+
 	wl_list_for_each(surface, &state.surfaces, link) {
-		create_layer_surface(surface);
+		create_surface(surface);
 	}
 
 	wl_list_for_each(surface, &state.surfaces, link) {
@@ -1866,6 +1993,10 @@ int main(int argc, char **argv) {
 	loop_add_fd(state.eventloop, get_comm_reply_fd(), POLLIN, comm_in, NULL);
 
 	loop_add_timer(state.eventloop, 1000, timer_render, &state);
+
+	if (state.args.fade_in) {
+		loop_add_timer(state.eventloop, state.args.fade_in, end_allow_fade_period, &state);
+	}
 
 	if (state.args.daemonize && state.args.fade_in) {
 		loop_add_timer(state.eventloop, state.args.fade_in + 500, daemonize_done, &daemonfd);
@@ -1891,6 +2022,10 @@ int main(int argc, char **argv) {
 
 	if (state.args.daemonize && state.args.fade_in) {
 		daemonize_done(&daemonfd); // In case we exit before --fade-in timeout
+	}
+	if (state.ext_session_lock_v1) {
+		ext_session_lock_v1_unlock_and_destroy(state.ext_session_lock_v1);
+		wl_display_flush(state.display);
 	}
 
 	free(state.args.font);

@@ -7,6 +7,12 @@
 #include "background-image.h"
 #include "swaylock.h"
 
+// glib might or might not have already defined MIN,
+// depending on whether we have pixbuf or not...
+#ifndef MIN
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#endif
+
 #define M_PI 3.14159265358979323846
 const float TYPE_INDICATOR_RANGE = M_PI / 3.0f;
 const float TYPE_INDICATOR_BORDER_THICKNESS = M_PI / 128.0f;
@@ -63,7 +69,7 @@ static void timetext(struct swaylock_surface *surface, char **tstr, char **dstr)
 	setlocale(LC_TIME, prevloc);
 }
 
-void render_frame_background(struct swaylock_surface *surface) {
+void render_frame_background(struct swaylock_surface *surface, bool commit) {
 	struct swaylock_state *state = surface->state;
 
 	int buffer_width = surface->width * surface->scale;
@@ -87,8 +93,15 @@ void render_frame_background(struct swaylock_surface *surface) {
 	cairo_paint(cairo);
 	if (surface->image && state->args.mode != BACKGROUND_MODE_SOLID_COLOR) {
 		cairo_set_operator(cairo, CAIRO_OPERATOR_OVER);
-		render_background_image(cairo, surface->image,
-			state->args.mode, buffer_width, buffer_height);
+		if (fade_is_complete(&surface->fade)) {
+			render_background_image(cairo, surface->image,
+				state->args.mode, buffer_width, buffer_height, 1);
+		} else {
+			render_background_image(cairo, surface->screencopy.original_image,
+				state->args.mode, buffer_width, buffer_height, 1);
+			render_background_image(cairo, surface->image,
+				state->args.mode, buffer_width, buffer_height, surface->fade.alpha);
+		}
 	}
 	cairo_restore(cairo);
 	cairo_identity_matrix(cairo);
@@ -96,47 +109,20 @@ void render_frame_background(struct swaylock_surface *surface) {
 	wl_surface_set_buffer_scale(surface->surface, surface->scale);
 	wl_surface_attach(surface->surface, surface->current_buffer->buffer, 0, 0);
 	wl_surface_damage_buffer(surface->surface, 0, 0, INT32_MAX, INT32_MAX);
-	wl_surface_commit(surface->surface);
+	if (commit) {
+		wl_surface_commit(surface->surface);
+	}
 }
 
 void render_background_fade(struct swaylock_surface *surface, uint32_t time) {
-	struct swaylock_state *state = surface->state;
-
-	int buffer_width = surface->width * surface->scale;
-	int buffer_height = surface->height * surface->scale;
-	if (buffer_width == 0 || buffer_height == 0) {
-		return; // not yet configured
-	}
-
 	if (fade_is_complete(&surface->fade)) {
 		return;
 	}
 
-	surface->current_buffer = get_next_buffer(state->shm,
-			surface->buffers, buffer_width, buffer_height);
-	if (surface->current_buffer == NULL) {
-		return;
-	}
+	fade_update(&surface->fade, time);
 
-	fade_update(&surface->fade, surface->current_buffer, time);
-
-	wl_surface_set_buffer_scale(surface->surface, surface->scale);
-	wl_surface_attach(surface->surface, surface->current_buffer->buffer, 0, 0);
-	wl_surface_damage(surface->surface, 0, 0, surface->width, surface->height);
-	wl_surface_commit(surface->surface);
-}
-
-void render_background_fade_prepare(struct swaylock_surface *surface, struct pool_buffer *buffer) {
-	if (fade_is_complete(&surface->fade)) {
-		return;
-	}
-
-	fade_prepare(&surface->fade, buffer);
-
-	wl_surface_set_buffer_scale(surface->surface, surface->scale);
-	wl_surface_attach(surface->surface, surface->current_buffer->buffer, 0, 0);
-	wl_surface_damage(surface->surface, 0, 0, surface->width, surface->height);
-	wl_surface_commit(surface->surface);
+	render_frame_background(surface, true);
+	render_frame(surface);
 }
 
 void render_frame(struct swaylock_surface *surface) {
@@ -214,6 +200,34 @@ void render_frame(struct swaylock_surface *surface) {
 
 	if (state->args.indicator ||
 			(upstream_show_indicator && state->auth_state != AUTH_STATE_GRACE)) {
+		// Draw indicator image
+		cairo_surface_t * image = state->indicator_image;
+		if (image) {
+			int height = state->indicator_image_height;
+			int width = state->indicator_image_width;
+			int smallest = MIN(height, width);
+			double radius = arc_radius - arc_thickness * 0.5;
+			double scale = radius * 2 / smallest;
+			double offset = buffer_diameter * 0.5 / scale - smallest * 0.5;
+
+			// Create the arc that clips the image
+			cairo_arc(cairo,
+					buffer_diameter * 0.5,
+					buffer_diameter * 0.5,
+					radius,
+					0, 2 * M_PI);
+
+			// Scale cairo to make image fit the indicator
+			cairo_scale(cairo, scale, scale);
+
+			cairo_set_source_surface(cairo, image, offset, offset);
+
+			// Scale cairo back
+			cairo_scale(cairo, 1 / scale, 1 / scale);
+
+			cairo_fill(cairo);
+		}
+
 		// Fill inner circle
 		cairo_set_line_width(cairo, 0);
 		cairo_arc(cairo, buffer_width / 2, buffer_diameter / 2,

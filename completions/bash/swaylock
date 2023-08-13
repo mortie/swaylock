@@ -47,6 +47,7 @@ _swaylock()
     --indicator-thickness
     --indicator-x-position
     --indicator-y-position
+    --indicator-image
     --inside-caps-lock-color
     --inside-clear-color
     --inside-color
@@ -99,7 +100,7 @@ _swaylock()
       COMPREPLY=($(compgen -W "${scaling[*]}" -- "$cur"))
       return
       ;;
-    -i|--image)
+    -i|--image|--indicator-image)
       if grep -q : <<< "$cur"; then
         output="${cur%%:*}:"
         cur="${cur#*:}"

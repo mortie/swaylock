@@ -76,6 +76,7 @@ struct swaylock_args {
 	char *timestr;
 	char *datestr;
 	uint32_t fade_in;
+	bool allow_fade;
 	bool password_submit_on_touch;
 	uint32_t password_grace_period;
 	bool password_grace_no_mouse;
@@ -100,6 +101,9 @@ struct swaylock_state {
 	struct wl_shm *shm;
 	struct wl_list surfaces;
 	struct wl_list images;
+	cairo_surface_t *indicator_image;
+	int indicator_image_width;
+	int indicator_image_height;
 	struct swaylock_args args;
 	struct swaylock_password password;
 	struct swaylock_xkb xkb;
@@ -110,6 +114,8 @@ struct swaylock_state {
 	size_t n_screenshots_done;
 	bool run_display;
 	struct zxdg_output_manager_v1 *zxdg_output_manager;
+	struct ext_session_lock_manager_v1 *ext_session_lock_manager_v1;
+	struct ext_session_lock_v1 *ext_session_lock_v1;
 };
 
 struct swaylock_surface {
@@ -118,6 +124,7 @@ struct swaylock_surface {
 		uint32_t format, width, height, stride;
 		enum wl_output_transform transform;
 		void *data;
+		cairo_surface_t *original_image;
 		struct swaylock_image *image;
 	} screencopy;
 	struct swaylock_state *state;
@@ -129,6 +136,7 @@ struct swaylock_surface {
 	struct wl_subsurface *subsurface;
 	struct zwlr_layer_surface_v1 *layer_surface;
 	struct zwlr_screencopy_frame_v1 *screencopy_frame;
+	struct ext_session_lock_surface_v1 *ext_session_lock_surface_v1;
 	struct pool_buffer buffers[2];
 	struct pool_buffer indicator_buffers[2];
 	struct pool_buffer *current_buffer;
@@ -157,9 +165,8 @@ void swaylock_handle_key(struct swaylock_state *state,
 		xkb_keysym_t keysym, uint32_t codepoint);
 void swaylock_handle_mouse(struct swaylock_state *state);
 void swaylock_handle_touch(struct swaylock_state *state);
-void render_frame_background(struct swaylock_surface *surface);
+void render_frame_background(struct swaylock_surface *surface, bool commit);
 void render_background_fade(struct swaylock_surface *surface, uint32_t time);
-void render_background_fade_prepare(struct swaylock_surface *surface, struct pool_buffer *buffer);
 void render_frame(struct swaylock_surface *surface);
 void render_frames(struct swaylock_state *state);
 void damage_surface(struct swaylock_surface *surface);

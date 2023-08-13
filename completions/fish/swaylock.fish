@@ -20,6 +20,7 @@ complete -c swaylock -l indicator-radius            --description "Sets the indi
 complete -c swaylock -l indicator-thickness         --description "Sets the indicator thickness."
 complete -c swaylock -l indicator-x-position        --description "Sets the horizontal position of the indicator."
 complete -c swaylock -l indicator-y-position        --description "Sets the vertical position of the indicator."
+complete -c swaylock -l indicator-image             --description "Display the given image inside of the indicator."
 complete -c swaylock -l inside-caps-lock-color      --description "Sets the color of the inside of the indicator when Caps Lock is active."
 complete -c swaylock -l inside-clear-color          --description "Sets the color of the inside of the indicator when cleared."
 complete -c swaylock -l inside-color                --description "Sets the color of the inside of the indicator."

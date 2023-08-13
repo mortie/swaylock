@@ -141,6 +141,9 @@ Locks your Wayland session.
 *--indicator-y-position* <y>
 	Sets the vertical position of the indicator.
 
+*--indicator-image* <path>
+	Display the given image inside of the indicator.
+
 *--inside-color* <rrggbb[aa]>
 	Sets the color of the inside of the indicator.
 
