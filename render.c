@@ -204,7 +204,7 @@ void render_frame(struct swaylock_surface *surface) {
 		cairo_surface_t * image = state->indicator_image;
 		if (image) {
 			int height = state->indicator_image_height;
-			int width = state->indicator_image_height;
+			int width = state->indicator_image_width;
 			int smallest = MIN(height, width);
 			double radius = arc_radius - arc_thickness * 0.5;
 			double scale = radius * 2 / smallest;
@@ -218,12 +218,12 @@ void render_frame(struct swaylock_surface *surface) {
 					0, 2 * M_PI);
 
 			// Scale cairo to make image fit the indicator
-			cairo_scale (cairo, scale, scale);
+			cairo_scale(cairo, scale, scale);
 
 			cairo_set_source_surface(cairo, image, offset, offset);
 
 			// Scale cairo back
-			cairo_scale (cairo, 1 / scale, 1 / scale);
+			cairo_scale(cairo, 1 / scale, 1 / scale);
 
 			cairo_fill(cairo);
 		}
